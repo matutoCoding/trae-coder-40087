@@ -7,7 +7,7 @@
         <el-card class="stat-card" shadow="hover">
           <div class="stat-content">
             <div class="stat-icon blue">
-              <el-icon :size="28"><ChargingPile /></el-icon>
+              <el-icon :size="28"><Connection /></el-icon>
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ opsStats.totalOpenPiles }}</div>
@@ -279,7 +279,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Refresh,
-  ChargingPile,
+  Connection,
   CircleCheck,
   Lightning,
   Calendar,
@@ -330,10 +330,6 @@ const opsStats = computed<OperationalStats>(() => {
     return _opsCache.value
   }
 })
-
-const totalPiles = computed(() =>
-  scheduleStore.piles.filter(p => p.type === 'private').length
-)
 
 const openMinutes = computed(() => {
   let total = 0

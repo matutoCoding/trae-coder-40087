@@ -4,7 +4,7 @@
       <div class="sidebar-header">
         <div class="sidebar-title">
           <el-icon :size="24" color="#3498db">
-            <Charger />
+            <Connection />
           </el-icon>
           <span>充电桩共享系统</span>
         </div>
@@ -45,13 +45,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  DataAnalysis,
-  Calendar,
-  Warning,
-  Tickets,
-  Medal
-} from '@element-plus/icons-vue'
+import { Connection } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()

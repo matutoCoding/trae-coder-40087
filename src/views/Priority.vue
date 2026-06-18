@@ -236,7 +236,7 @@ import { Refresh, Sort, Medal, Warning, Tickets, Clock, Right } from '@element-p
 import { usePriorityStore } from '@/store/priority'
 import { useQueueStore } from '@/store/queue'
 import { getUsers, getPiles } from '@/utils/storage'
-import type { User, ChargingPile, QueueItem } from '@/types'
+import type { User, ChargingPile } from '@/types'
 import dayjs from 'dayjs'
 
 const priorityStore = usePriorityStore()

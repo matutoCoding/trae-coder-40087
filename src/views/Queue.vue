@@ -94,7 +94,7 @@
             </div>
 
             <div v-else class="no-calling">
-              <el-icon :size="80" color="rgba(255,255,255,0.5)"><User /></el-icon>
+              <el-icon :size="80" color="rgba(255,255,255,0.5)"><UserIcon /></el-icon>
               <p>暂无叫号</p>
               <p class="hint">点击下方按钮开始叫号</p>
             </div>
@@ -276,7 +276,7 @@
                   <span class="room-number">{{ item.roomNumber }}</span>
                 </div>
                 <div class="pile-info">
-                  <el-icon><Charger /></el-icon>
+                  <el-icon><Connection /></el-icon>
                   <span>{{ item.pileCode }}</span>
                   <span class="duration">预计 {{ item.expectedDuration }} 分钟</span>
                 </div>
@@ -320,13 +320,13 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   Bell,
-  User,
+  User as UserIcon,
   DataAnalysis,
   Operation,
   Right,
   Tickets,
   List,
-  Charger,
+  Connection,
   Clock,
   Lightning,
   VideoPlay,
@@ -380,19 +380,22 @@ const queueRules: FormRules = {
 
 const activeTask = computed<ChargingTask | null>(() => {
   taskStore.loadTasks()
+  const chargingTask = taskStore.tasks.find(t => t.status === 'charging')
+  if (chargingTask) {
+    if (!queueStore.currentCalledItem && chargingTask.queueItemId) {
+      const qi = queueStore.queueItems.find(q => q.id === chargingTask.queueItemId)
+      if (qi && qi.status === 'called') {
+        queueStore.currentCalledItem = qi
+      }
+    }
+    return chargingTask
+  }
   const called = queueStore.currentCalledItem
   if (called?.taskId) {
-    const t = taskStore.tasks.find(x => x.id === called.taskId && (x.status === 'waiting' || x.status === 'charging'))
-    if (t && t.status === 'charging') return t
+    const t = taskStore.tasks.find(x => x.id === called.taskId && x.status === 'waiting')
+    if (t) return null
   }
-  const result = taskStore.tasks.find(t => t.status === 'charging') || null
-  if (result && !called) {
-    const qi = queueStore.queueItems.find(q => q.id === result.queueItemId)
-    if (qi && qi.status === 'called') {
-      queueStore.currentCalledItem = qi
-    }
-  }
-  return result
+  return null
 })
 
 const chargingCount = computed(() =>

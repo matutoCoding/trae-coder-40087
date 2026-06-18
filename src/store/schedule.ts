@@ -403,7 +403,7 @@ export const useScheduleStore = defineStore('schedule', () => {
       }
     }
     for (const b of bookings.value) {
-      if (b.status === 'cancelled' && !b.coveredByEmergency) continue
+      if (b.status === 'cancelled') continue
       if (new Date(b.startTime).toDateString() !== todayKey) continue
       totalBookedMin += _minutesBetween(b.startTime, b.endTime)
     }

@@ -378,12 +378,30 @@ export const useConflictStore = defineStore('conflict', () => {
       return conflictCheck
     }
 
+    if (isEmergency && conflictCheck.hasConflict) {
+      const hasEmergencyConflict = conflictCheck.conflictingBookings.some(b => b.isEmergency)
+      if (hasEmergencyConflict) {
+        const emergencyConflict = conflictCheck.conflictingBookings.find(b => b.isEmergency)
+        const conflictInfo = emergencyConflict
+          ? `${new Date(emergencyConflict.startTime).toLocaleTimeString()} - ${new Date(emergencyConflict.endTime).toLocaleTimeString()}（${emergencyConflict.userName}）`
+          : ''
+        return {
+          hasConflict: true,
+          conflictingBookings: conflictCheck.conflictingBookings.filter(b => b.isEmergency),
+          message: `该时段已存在另一条应急预约：${conflictInfo}，同一时段不允许创建多条应急预约`
+        }
+      }
+      return {
+        hasConflict: false,
+        conflictingBookings: conflictCheck.conflictingBookings,
+        message: '紧急预约可创建，将覆盖普通预约'
+      }
+    }
+
     return {
       hasConflict: false,
-      conflictingBookings: conflictCheck.conflictingBookings,
-      message: isEmergency && conflictCheck.hasConflict
-        ? '紧急预约可创建，将覆盖普通预约'
-        : '预约有效'
+      conflictingBookings: [],
+      message: '预约有效'
     }
   }
 

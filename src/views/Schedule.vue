@@ -249,8 +249,26 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140">
+        <el-table-column label="操作" width="240">
           <template #default="scope">
+            <el-button
+              v-if="scope.row.status === 'confirmed' && getTaskForBooking(scope.row.id)?.status === 'waiting'"
+              type="success"
+              link
+              size="small"
+              @click="handleStartCharging(scope.row)"
+            >
+              开始充电
+            </el-button>
+            <el-button
+              v-if="scope.row.status === 'charging' && getTaskForBooking(scope.row.id)?.status === 'charging'"
+              type="warning"
+              link
+              size="small"
+              @click="handleFinishCharging(scope.row)"
+            >
+              结束充电
+            </el-button>
             <el-button
               v-if="scope.row.status === 'pending' || scope.row.status === 'confirmed'"
               type="danger"
@@ -260,7 +278,7 @@
             >
               取消
             </el-button>
-            <span v-else>-</span>
+            <span v-if="scope.row.status !== 'pending' && scope.row.status !== 'confirmed' && scope.row.status !== 'charging' && !(scope.row.status === 'confirmed' && getTaskForBooking(scope.row.id)?.status === 'waiting')">-</span>
           </template>
         </el-table-column>
       </el-table>
@@ -822,6 +840,65 @@ const handleCancelBooking = (id: string) => {
       taskStore.loadTasks()
       refreshDaySchedule()
       ElMessage.success('预约已取消，已自动通知下一位排队用户')
+    })
+    .catch(() => {})
+}
+
+const getTaskForBooking = (bookingId: string) => {
+  taskStore.loadTasks()
+  return taskStore.tasks.find(t => t.bookingId === bookingId && t.status !== 'cancelled')
+}
+
+const handleStartCharging = (booking: Booking) => {
+  const task = getTaskForBooking(booking.id)
+  if (!task || task.status !== 'waiting') {
+    ElMessage.error('未找到待充电任务')
+    return
+  }
+  ElMessageBox.confirm(
+    `确认用户 ${booking.userName} 在桩位 ${booking.pileCode} 开始充电？`,
+    '开始充电确认',
+    { type: 'success', confirmButtonText: '开始充电' }
+  )
+    .then(() => {
+      const result = taskStore.startCharging(task.id)
+      if (result) {
+        scheduleStore.loadData()
+        queueStore.loadQueue()
+        refreshDaySchedule()
+        ElMessage.success('充电已开始')
+      } else {
+        ElMessage.error('开始充电失败')
+      }
+    })
+    .catch(() => {})
+}
+
+const handleFinishCharging = (booking: Booking) => {
+  const task = getTaskForBooking(booking.id)
+  if (!task || task.status !== 'charging') {
+    ElMessage.error('未找到充电中的任务')
+    return
+  }
+  ElMessageBox.confirm(
+    `确认结束 ${booking.userName} 的充电？将释放桩位并自动叫号下一位。`,
+    '结束充电确认',
+    { type: 'warning', confirmButtonText: '确认结束' }
+  )
+    .then(() => {
+      const result = taskStore.finishCharging(task.id)
+      if (result) {
+        if (result.queueItemId) {
+          queueStore.completeQueue(result.queueItemId)
+        }
+        scheduleStore.loadData()
+        queueStore.loadQueue()
+        taskStore.loadTasks()
+        refreshDaySchedule()
+        ElMessage.success('充电已完成，桩位已释放')
+      } else {
+        ElMessage.error('结束充电失败')
+      }
     })
     .catch(() => {})
 }
