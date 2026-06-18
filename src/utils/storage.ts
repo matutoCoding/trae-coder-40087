@@ -1,10 +1,11 @@
-import type { ChargingPile, Booking, QueueItem, User } from '@/types'
+import type { ChargingPile, Booking, QueueItem, User, ChargingTask } from '@/types'
 
 const STORAGE_KEYS = {
   PILES: 'charging_piles',
   BOOKINGS: 'bookings',
   QUEUE: 'queue_items',
   USERS: 'users',
+  TASKS: 'charging_tasks',
   CURRENT_USER: 'current_user'
 }
 
@@ -51,6 +52,14 @@ export function getUsers(): User[] {
 
 export function saveUsers(users: User[]): void {
   setData(STORAGE_KEYS.USERS, users)
+}
+
+export function getTasks(): ChargingTask[] {
+  return getData<ChargingTask[]>(STORAGE_KEYS.TASKS, [])
+}
+
+export function saveTasks(tasks: ChargingTask[]): void {
+  setData(STORAGE_KEYS.TASKS, tasks)
 }
 
 export function generateId(): string {
