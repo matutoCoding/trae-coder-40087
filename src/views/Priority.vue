@@ -275,7 +275,7 @@ const emergencyRules: FormRules = {
 const vipUsers = computed(() => allUsers.value.filter(user => user.isVip))
 
 const availablePiles = computed(() =>
-  allPiles.value.filter(pile => pile.status === 'available')
+  allPiles.value.filter(pile => pile.isOpenToPublic && pile.status === 'available')
 )
 
 const waitingQueue = computed(() => queueStore.waitingQueue)
@@ -307,6 +307,10 @@ const handleVipInsert = async () => {
         ElMessage.error('桩位信息不存在')
         return
       }
+      if (!priorityStore.isPileAvailable(vipForm.value.pileId)) {
+        ElMessage.error('该桩位当前不可用（可能已改为仅自用或维护中），请选择其他桩位')
+        return
+      }
       const result = priorityStore.vipInsertQueue(
         vipForm.value.userId,
         vipForm.value.pileId,
@@ -314,12 +318,12 @@ const handleVipInsert = async () => {
         vipForm.value.expectedDuration
       )
       if (result) {
-        ElMessage.success('VIP插队成功')
+        ElMessage.success('VIP插队成功，已优先加入队列')
         vipFormRef.value?.resetFields()
         vipForm.value.expectedDuration = 60
         loadData()
       } else {
-        ElMessage.error('VIP插队失败，请检查用户是否为VIP')
+        ElMessage.error('VIP插队失败，请检查用户是否为VIP或桩位是否可用')
       }
     }
   })
@@ -334,6 +338,10 @@ const handleEmergencyInsert = async () => {
         ElMessage.error('桩位信息不存在')
         return
       }
+      if (!priorityStore.isPileAvailable(emergencyForm.value.pileId)) {
+        ElMessage.error('该桩位当前不可用（可能已改为仅自用或维护中），请选择其他桩位')
+        return
+      }
       const result = priorityStore.emergencyInsertQueue(
         emergencyForm.value.userId,
         emergencyForm.value.pileId,
@@ -346,7 +354,7 @@ const handleEmergencyInsert = async () => {
         emergencyForm.value.expectedDuration = 60
         loadData()
       } else {
-        ElMessage.error('应急插队失败')
+        ElMessage.error('应急插队失败，请检查桩位是否可用')
       }
     }
   })

@@ -1,13 +1,87 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Booking, ConflictResult, TimeSlot } from '@/types'
-import { getBookings, saveBookings } from '@/utils/storage'
+import type { Booking, ConflictResult, TimeSlot, ChargingPile } from '@/types'
+import { getBookings, saveBookings, getPiles } from '@/utils/storage'
+import { useQueueStore } from './queue'
 
 export const useConflictStore = defineStore('conflict', () => {
   const bookings = ref<Booking[]>([])
+  const piles = ref<ChargingPile[]>([])
 
   function loadBookings() {
     bookings.value = getBookings()
+  }
+
+  function loadPiles() {
+    piles.value = getPiles()
+  }
+
+  function validatePileAvailability(pileId: string): { valid: boolean; message: string } {
+    loadPiles()
+    const pile = piles.value.find(p => p.id === pileId)
+    if (!pile) {
+      return { valid: false, message: '桩位不存在' }
+    }
+    if (pile.status !== 'available') {
+      const statusText: Record<string, string> = {
+        occupied: '占用中',
+        maintenance: '维护中',
+        offline: '离线'
+      }
+      return { valid: false, message: `桩位当前${statusText[pile.status] || '不可用'}，无法预约` }
+    }
+    if (!pile.isOpenToPublic) {
+      return { valid: false, message: '该桩位为仅自用状态，未对外开放' }
+    }
+    return { valid: true, message: '桩位可用' }
+  }
+
+  function isBookingTimeInOpenSlots(
+    pileId: string,
+    startTime: string,
+    endTime: string
+  ): { valid: boolean; message: string } {
+    loadPiles()
+    const pile = piles.value.find(p => p.id === pileId)
+    if (!pile) {
+      return { valid: false, message: '桩位不存在' }
+    }
+    if (!pile.isOpenToPublic || pile.openTimeSlots.length === 0) {
+      return { valid: false, message: '该桩位未设置开放时段' }
+    }
+
+    const start = new Date(startTime)
+    const end = new Date(endTime)
+    const dayOfWeek = start.getDay()
+    const startMinutes = start.getHours() * 60 + start.getMinutes()
+    const endMinutes = end.getHours() * 60 + end.getMinutes()
+
+    if (start.toDateString() !== end.toDateString()) {
+      return { valid: false, message: '预约必须在同一天内完成' }
+    }
+
+    for (const slot of pile.openTimeSlots) {
+      if (slot.dayOfWeek && !slot.dayOfWeek.includes(dayOfWeek)) continue
+
+      const [sHour, sMin] = slot.startTime.split(':').map(Number)
+      const [eHour, eMin] = slot.endTime.split(':').map(Number)
+      const slotStartMinutes = sHour * 60 + sMin
+      const slotEndMinutes = eHour * 60 + eMin
+
+      if (startMinutes >= slotStartMinutes && endMinutes <= slotEndMinutes) {
+        return { valid: true, message: '预约时段在开放范围内' }
+      }
+    }
+
+    const openTimeRanges = pile.openTimeSlots
+      .filter(slot => !slot.dayOfWeek || slot.dayOfWeek.includes(dayOfWeek))
+      .map(slot => `${slot.startTime}-${slot.endTime}`)
+      .join('、')
+
+    if (openTimeRanges) {
+      return { valid: false, message: `预约时段不在开放范围内，当日开放时段：${openTimeRanges}` }
+    }
+    return { valid: false, message: '当日该桩位无开放时段' }
   }
 
   function isTimeOverlap(
@@ -99,8 +173,21 @@ export const useConflictStore = defineStore('conflict', () => {
     const index = bookings.value.findIndex(b => b.id === bookingId)
     if (index === -1) return false
 
+    const booking = bookings.value[index]
     bookings.value[index].status = 'cancelled'
     saveBookings(bookings.value)
+
+    try {
+      const queueStore = useQueueStore()
+      loadPiles()
+      const pile = piles.value.find(p => p.id === booking.pileId)
+      if (pile) {
+        queueStore.callNextForPile(pile)
+      }
+    } catch (e) {
+      console.error('自动叫号失败:', e)
+    }
+
     return true
   }
 
@@ -238,6 +325,15 @@ export const useConflictStore = defineStore('conflict', () => {
     endTime: string,
     isEmergency: boolean = false
   ): ConflictResult {
+    const pileValidation = validatePileAvailability(pileId)
+    if (!pileValidation.valid) {
+      return {
+        hasConflict: true,
+        conflictingBookings: [],
+        message: pileValidation.message
+      }
+    }
+
     const timeValidation = validateBookingTime(startTime)
     if (!timeValidation.valid) {
       return {
@@ -253,6 +349,15 @@ export const useConflictStore = defineStore('conflict', () => {
         hasConflict: true,
         conflictingBookings: [],
         message: durationValidation.message
+      }
+    }
+
+    const openTimeValidation = isBookingTimeInOpenSlots(pileId, startTime, endTime)
+    if (!openTimeValidation.valid) {
+      return {
+        hasConflict: true,
+        conflictingBookings: [],
+        message: openTimeValidation.message
       }
     }
 
@@ -277,7 +382,11 @@ export const useConflictStore = defineStore('conflict', () => {
 
   return {
     bookings,
+    piles,
     loadBookings,
+    loadPiles,
+    validatePileAvailability,
+    isBookingTimeInOpenSlots,
     isTimeOverlap,
     isTimeSlotOverlap,
     checkBookingConflict,

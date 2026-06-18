@@ -223,11 +223,16 @@
         <el-form-item label="选择桩位" prop="pileId">
           <el-select v-model="bookingForm.pileId" placeholder="请选择桩位" style="width: 100%" @change="handlePileChange">
             <el-option
-              v-for="pile in scheduleStore.piles.filter(p => p.status === 'available')"
+              v-for="pile in bookablePiles"
               :key="pile.id"
               :label="`${pile.code} - ${pile.location}`"
               :value="pile.id"
-            />
+              :disabled="!pile.isOpenToPublic || pile.status !== 'available'"
+            >
+              <span>{{ pile.code }} - {{ pile.location }}</span>
+              <el-tag v-if="!pile.isOpenToPublic" type="info" size="small" style="margin-left: 8px">仅自用</el-tag>
+              <el-tag v-else-if="pile.status !== 'available'" type="warning" size="small" style="margin-left: 8px">{{ getStatusText(pile.status) }}</el-tag>
+            </el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="选择用户" prop="userId">
@@ -291,11 +296,13 @@ import { Plus } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { useScheduleStore } from '@/store/schedule'
 import { useConflictStore } from '@/store/conflict'
+import { useQueueStore } from '@/store/queue'
 import { getUsers } from '@/utils/storage'
 import type { ChargingPile, Booking, TimeSlot, User, ConflictResult } from '@/types'
 
 const scheduleStore = useScheduleStore()
 const conflictStore = useConflictStore()
+const queueStore = useQueueStore()
 
 const users = ref<User[]>([])
 
@@ -382,6 +389,17 @@ const sortedBookings = computed(() => {
   return [...scheduleStore.bookings].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   )
+})
+
+const bookablePiles = computed(() => {
+  return scheduleStore.piles.map(pile => ({
+    ...pile,
+    _bookable: pile.isOpenToPublic && pile.status === 'available'
+  })).sort((a, b) => {
+    if (a._bookable && !b._bookable) return -1
+    if (!a._bookable && b._bookable) return 1
+    return 0
+  })
 })
 
 watch(
@@ -571,47 +589,74 @@ const submitBookingForm = async () => {
   await bookingFormRef.value.validate((valid) => {
     if (!valid) return
 
+    const pileValidation = conflictStore.validatePileAvailability(bookingForm.pileId)
+    if (!pileValidation.valid) {
+      ElMessage.error(pileValidation.message)
+      return
+    }
+
+    const openTimeValidation = conflictStore.isBookingTimeInOpenSlots(
+      bookingForm.pileId,
+      bookingForm.startTime,
+      bookingForm.endTime
+    )
+    if (!openTimeValidation.valid) {
+      ElMessage.error(openTimeValidation.message)
+      return
+    }
+
     if (conflictResult.hasConflict && !bookingForm.isEmergency) {
       ElMessage.error(conflictResult.message)
       return
     }
 
-    if (conflictResult.hasConflict && bookingForm.isEmergency) {
-      for (const conflicting of conflictResult.conflictingBookings) {
-        if (!conflicting.isEmergency) {
-          conflictStore.releaseBookingSlot(conflicting.id)
-        }
-      }
-      conflictStore.loadBookings()
+    if (bookingForm.isEmergency) {
+      const conflictingIds = conflictResult.conflictingBookings
+        .filter(b => !b.isEmergency)
+        .map(b => b.id)
+
+      scheduleStore.createEmergencyBooking({
+        pileId: bookingForm.pileId,
+        pileCode: bookingForm.pileCode,
+        userId: bookingForm.userId,
+        userName: bookingForm.userName,
+        roomNumber: bookingForm.roomNumber,
+        startTime: bookingForm.startTime,
+        endTime: bookingForm.endTime
+      }, conflictingIds)
+    } else {
+      const newBooking = scheduleStore.createBooking({
+        pileId: bookingForm.pileId,
+        pileCode: bookingForm.pileCode,
+        userId: bookingForm.userId,
+        userName: bookingForm.userName,
+        roomNumber: bookingForm.roomNumber,
+        startTime: bookingForm.startTime,
+        endTime: bookingForm.endTime,
+        isEmergency: false
+      })
+      scheduleStore.updateBookingStatus(newBooking.id, 'confirmed')
     }
 
-    scheduleStore.createBooking({
-      pileId: bookingForm.pileId,
-      pileCode: bookingForm.pileCode,
-      userId: bookingForm.userId,
-      userName: bookingForm.userName,
-      roomNumber: bookingForm.roomNumber,
-      startTime: bookingForm.startTime,
-      endTime: bookingForm.endTime,
-      isEmergency: bookingForm.isEmergency
-    })
-
     conflictStore.loadBookings()
-    ElMessage.success('预约创建成功')
+    scheduleStore.loadData()
+    ElMessage.success(bookingForm.isEmergency ? '应急预约创建成功，已覆盖冲突的普通预约' : '预约创建成功')
     bookingDialogVisible.value = false
   })
 }
 
 const handleCancelBooking = (id: string) => {
-  ElMessageBox.confirm('确定要取消该预约吗？', '取消确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
+  ElMessageBox.confirm('确定要取消该预约吗？取消后系统将自动叫号排队中优先级最高的用户。', '取消确认', {
+    confirmButtonText: '确定取消',
+    cancelButtonText: '返回',
     type: 'warning'
   })
     .then(() => {
       scheduleStore.cancelBooking(id)
       conflictStore.loadBookings()
-      ElMessage.success('预约已取消')
+      scheduleStore.loadData()
+      queueStore.loadQueue()
+      ElMessage.success('预约已取消，已自动通知下一位排队用户')
     })
     .catch(() => {})
 }

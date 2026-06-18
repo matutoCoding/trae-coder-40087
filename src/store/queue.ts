@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { QueueItem, ChargingPile } from '@/types'
-import { getQueueItems, saveQueueItems, generateId, getUsers } from '@/utils/storage'
+import { getQueueItems, saveQueueItems, generateId, getUsers, getPiles } from '@/utils/storage'
 
 const PRIORITY_LEVELS = {
   EMERGENCY: 100,
@@ -62,6 +62,11 @@ export const useQueueStore = defineStore('queue', () => {
       return null
     }
 
+    if (!isPileAvailable(pileId)) {
+      console.error('Pile not available for queue')
+      return null
+    }
+
     const existingItem = queueItems.value.find(
       item => item.userId === userId && item.status === 'waiting'
     )
@@ -103,6 +108,13 @@ export const useQueueStore = defineStore('queue', () => {
     return true
   }
 
+  const isPileAvailable = (pileId: string): boolean => {
+    const allPiles = getPiles()
+    const pile = allPiles.find(p => p.id === pileId)
+    if (!pile) return false
+    return pile.status === 'available' && pile.isOpenToPublic
+  }
+
   const callNext = (availablePile?: ChargingPile): QueueItem | null => {
     const waitingItems = waitingQueue.value
     if (waitingItems.length === 0) {
@@ -110,13 +122,27 @@ export const useQueueStore = defineStore('queue', () => {
       return null
     }
 
-    let nextItem = waitingItems[0]
+    let nextItem: QueueItem | undefined
 
     if (availablePile) {
       const matchingItem = waitingItems.find(item => item.pileId === availablePile.id)
-      if (matchingItem) {
+      if (matchingItem && isPileAvailable(availablePile.id)) {
         nextItem = matchingItem
       }
+    }
+
+    if (!nextItem) {
+      for (const item of waitingItems) {
+        if (isPileAvailable(item.pileId)) {
+          nextItem = item
+          break
+        }
+      }
+    }
+
+    if (!nextItem) {
+      currentCalledItem.value = null
+      return null
     }
 
     nextItem.status = 'called'
@@ -125,6 +151,13 @@ export const useQueueStore = defineStore('queue', () => {
     sortQueue()
 
     return nextItem
+  }
+
+  const callNextForPile = (pile: ChargingPile): QueueItem | null => {
+    if (!pile || !isPileAvailable(pile.id)) {
+      return null
+    }
+    return callNext(pile)
   }
 
   const completeQueue = (queueId: string): boolean => {
@@ -187,9 +220,11 @@ export const useQueueStore = defineStore('queue', () => {
     sortQueue,
     getQueuePosition,
     getUserQueueItem,
+    isPileAvailable,
     joinQueue,
     cancelQueue,
     callNext,
+    callNextForPile,
     completeQueue,
     updateItemPriority,
     clearQueue,

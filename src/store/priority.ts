@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { QueueItem } from '@/types'
-import { getQueueItems, saveQueueItems, generateId, getUsers } from '@/utils/storage'
+import { getQueueItems, saveQueueItems, generateId, getUsers, getPiles } from '@/utils/storage'
 import { useQueueStore } from './queue'
 
 const PRIORITY_LEVELS = {
@@ -21,6 +21,13 @@ export const usePriorityStore = defineStore('priority', () => {
   }>>([])
 
   const priorityLevels = ref(PRIORITY_LEVELS)
+
+  const isPileAvailable = (pileId: string): boolean => {
+    const allPiles = getPiles()
+    const pile = allPiles.find(p => p.id === pileId)
+    if (!pile) return false
+    return pile.status === 'available' && pile.isOpenToPublic
+  }
 
   const calculatePriority = (isEmergency: boolean, isVip: boolean): number => {
     if (isEmergency) return priorityLevels.value.EMERGENCY
@@ -63,6 +70,11 @@ export const usePriorityStore = defineStore('priority', () => {
 
     if (!user.isVip) {
       console.error('User is not a VIP')
+      return null
+    }
+
+    if (!isPileAvailable(pileId)) {
+      console.error('Pile not available')
       return null
     }
 
@@ -131,6 +143,11 @@ export const usePriorityStore = defineStore('priority', () => {
 
     if (!user) {
       console.error('User not found')
+      return null
+    }
+
+    if (!isPileAvailable(pileId)) {
+      console.error('Pile not available')
       return null
     }
 
@@ -330,6 +347,7 @@ export const usePriorityStore = defineStore('priority', () => {
     priorityLevels,
     getEmergencyCount,
     getVipCount,
+    isPileAvailable,
     calculatePriority,
     sortQueueByPriority,
     vipInsertQueue,

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ChargingPile, TimeSlot, Booking } from '@/types'
 import { getPiles, savePiles, getBookings, saveBookings, generateId } from '@/utils/storage'
+import { useQueueStore } from './queue'
 
 export const useScheduleStore = defineStore('schedule', () => {
   const piles = ref<ChargingPile[]>([])
@@ -135,7 +136,40 @@ export const useScheduleStore = defineStore('schedule', () => {
   }
 
   function cancelBooking(id: string) {
-    return updateBookingStatus(id, 'cancelled')
+    const booking = bookings.value.find(b => b.id === id)
+    const result = updateBookingStatus(id, 'cancelled')
+    if (result && booking) {
+      try {
+        const queueStore = useQueueStore()
+        const pile = piles.value.find(p => p.id === booking.pileId)
+        if (pile) {
+          queueStore.callNextForPile(pile)
+        }
+      } catch (e) {
+        console.error('自动叫号失败:', e)
+      }
+    }
+    return result
+  }
+
+  function createEmergencyBooking(bookingData: Omit<Booking, 'id' | 'status' | 'createdAt' | 'isEmergency'>, conflictingIds: string[]) {
+    for (const conflictId of conflictingIds) {
+      const index = bookings.value.findIndex(b => b.id === conflictId)
+      if (index !== -1 && !bookings.value[index].isEmergency) {
+        bookings.value[index].status = 'cancelled'
+      }
+    }
+
+    const newBooking: Booking = {
+      ...bookingData,
+      id: generateId(),
+      status: 'confirmed',
+      isEmergency: true,
+      createdAt: new Date().toISOString()
+    }
+    bookings.value.push(newBooking)
+    saveBookings(bookings.value)
+    return newBooking
   }
 
   function getPileById(id: string) {
@@ -172,6 +206,7 @@ export const useScheduleStore = defineStore('schedule', () => {
     deleteOpenTimeSlot,
     setPilePublicStatus,
     createBooking,
+    createEmergencyBooking,
     updateBookingStatus,
     cancelBooking,
     getPileById,

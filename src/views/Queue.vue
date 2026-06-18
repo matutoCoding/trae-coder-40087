@@ -151,7 +151,7 @@
                 @change="handlePileChange"
               >
                 <el-option
-                  v-for="pile in scheduleStore.availablePiles"
+                  v-for="pile in bookablePiles"
                   :key="pile.id"
                   :label="`${pile.code} - ${pile.location}`"
                   :value="pile.id"
@@ -253,7 +253,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import {
   Bell,
@@ -276,6 +276,10 @@ import type { User, QueueItem } from '@/types'
 const queueStore = useQueueStore()
 const priorityStore = usePriorityStore()
 const scheduleStore = useScheduleStore()
+
+const bookablePiles = computed(() =>
+  scheduleStore.piles.filter(p => p.isOpenToPublic && p.status === 'available')
+)
 
 const queueFormRef = ref<FormInstance>()
 const users = ref<User[]>([])
@@ -328,6 +332,11 @@ const handleJoinQueue = () => {
 
   queueFormRef.value.validate((valid) => {
     if (valid) {
+      if (!queueStore.isPileAvailable(queueForm.pileId)) {
+        ElMessage.error('该桩位当前不可用（可能已改为仅自用或维护中），请选择其他桩位')
+        return
+      }
+
       const result = queueStore.joinQueue(
         queueForm.userId,
         queueForm.pileId,
@@ -341,7 +350,7 @@ const handleJoinQueue = () => {
         updateStats()
         resetForm()
       } else {
-        ElMessage.error('取号失败，请重试')
+        ElMessage.error('取号失败，请检查桩位是否可用或您是否已在队列中')
       }
     }
   })
